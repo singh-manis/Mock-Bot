@@ -228,9 +228,6 @@ node test-api.js
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📄 License
-
-This project is licensed under the MIT License.
 
 ## 🙏 Acknowledgments
 
@@ -242,3 +239,19 @@ This project is licensed under the MIT License.
 ---
 
 **Happy Interviewing! 🎉** 
+
+---
+
+## 🚀 Live Demo
+
+- Frontend: https://your-frontend-url.vercel.app
+- Backend: https://your-backend-url.onrender.com
+
+## 🛠️ Deployment
+
+- Frontend deployed on [Vercel]https://mock-bot-orcin.vercel.app/
+- Backend deployed on [Render]https://mock-bot-kynz.onrender.com
+
+## 🌐 Environment Variables
+
+See `.env.example` in each folder for required variables. 
