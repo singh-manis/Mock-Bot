@@ -9,8 +9,15 @@ dotenv.config();
 
 const app = express();
 const corsOptions = {
-  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  origin: [
+    'http://localhost:5173',
+    'https://mock-bot-orcin.vercel.app',
+    'https://vercel.app',
+    process.env.CLIENT_ORIGIN
+  ].filter(Boolean),
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 app.use(cors(corsOptions));
 app.use(morgan('combined'));
@@ -73,6 +80,36 @@ app.get('/api/test-gemini', async (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Root route for basic info
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'MockBot API Server',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      auth: '/api/auth',
+      chat: '/api/chat',
+      sessions: '/api/sessions',
+      health: '/api/health'
+    }
+  });
+});
+
+// Handle 404 for undefined routes
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    message: 'This is the MockBot API server. Use /api/ endpoints for functionality.',
+    availableEndpoints: [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/chat',
+      '/api/sessions',
+      '/api/health'
+    ]
+  });
 });
 
 app.listen(PORT, () => {
