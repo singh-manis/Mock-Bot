@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { User, Mail, Lock, Save, ArrowLeft, Trash2, Download, Bell, Shield, Palette } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { API_ENDPOINTS } from '../config';
 
 const Profile = () => {
   const [userInfo, setUserInfo] = useState({
@@ -50,7 +51,7 @@ const Profile = () => {
       if (profileImage) {
         const formData = new FormData();
         formData.append('profileImage', profileImage);
-        const imgRes = await fetch('http://localhost:5000/api/auth/upload-profile-image', {
+        const imgRes = await fetch(API_ENDPOINTS.UPLOAD_IMAGE, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -62,7 +63,7 @@ const Profile = () => {
         imageUrl = imgData.imageUrl;
       }
       // Update profile info (include imageUrl if uploaded)
-      const res = await fetch('http://localhost:5000/api/auth/update-profile', {
+      const res = await fetch(API_ENDPOINTS.UPDATE_PROFILE, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -116,7 +117,7 @@ const Profile = () => {
     setMessage('');
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/change-password', {
+      const res = await fetch(API_ENDPOINTS.CHANGE_PASSWORD, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

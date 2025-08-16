@@ -6,6 +6,7 @@ import jsPDF from 'jspdf';
 import { toast } from 'react-toastify';
 import ChatMessages from '../components/ChatMessages';
 import ChatInput from '../components/ChatInput';
+import { API_ENDPOINTS } from '../config';
 
 const skills = [
   { 
@@ -186,7 +187,7 @@ const MockInterviewBot = () => {
       }
       console.log('Sending chat request:', { message: userMessage, role: roleId || skillId, roleContext });
 
-      const res = await fetch('http://localhost:5000/api/chat', {
+      const res = await fetch(API_ENDPOINTS.CHAT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -14,6 +14,11 @@ A modern, AI-powered mock interview chatbot built with the MERN stack (MongoDB, 
 - **🎓 Onboarding Tour**: Guided tour for new users
 - **🔐 User Authentication**: Secure login and registration system
 
+## 🚀 Live Demo
+
+- **Frontend**: [https://mock-bot-orcin.vercel.app](https://mock-bot-orcin.vercel.app)
+- **Backend**: [https://mock-bot-kynz.onrender.com](https://mock-bot-kynz.onrender.com)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -242,15 +247,10 @@ node test-api.js
 
 ---
 
-## 🚀 Live Demo
-
-- Frontend: https://your-frontend-url.vercel.app
-- Backend: https://your-backend-url.onrender.com
-
 ## 🛠️ Deployment
 
-- Frontend deployed on [Vercel]https://mock-bot-orcin.vercel.app/
-- Backend deployed on [Render]https://mock-bot-kynz.onrender.com
+- **Frontend**: Deployed on [Vercel](https://vercel.com)
+- **Backend**: Deployed on [Render](https://render.com)
 
 ## 🌐 Environment Variables
 

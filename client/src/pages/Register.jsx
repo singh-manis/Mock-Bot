@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { UserPlus } from 'lucide-react';
+import { API_ENDPOINTS } from '../config';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -18,7 +19,7 @@ export default function Register() {
     setSuccess('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/auth/register', {
+      const res = await fetch(API_ENDPOINTS.REGISTER, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password })
