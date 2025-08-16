@@ -86,19 +86,13 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'MockBot API Server',
-    version: '1.0.0',
     status: 'running',
-    endpoints: {
-      auth: '/api/auth',
-      chat: '/api/chat',
-      sessions: '/api/sessions',
-      health: '/api/health'
-    }
+    endpoints: ['/api/auth', '/api/chat', '/api/sessions', '/api/health']
   });
 });
 
 // Handle 404 for undefined routes
-app.use('*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     message: 'This is the MockBot API server. Use /api/ endpoints for functionality.',
