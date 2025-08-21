@@ -10,7 +10,35 @@ if (!GEMINI_API_KEY) {
   console.error('GEMINI_API_KEY is not set in environment variables');
 }
 
-router.post('/', [
+// Simple rate limiting to prevent abuse
+const userRequests = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10;
+
+const checkRateLimit = (req, res, next) => {
+  const userIP = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  
+  if (!userRequests.has(userIP)) {
+    userRequests.set(userIP, []);
+  }
+  
+  const userRequestsList = userRequests.get(userIP);
+  const validRequests = userRequestsList.filter(time => now - time < RATE_LIMIT_WINDOW);
+  
+  if (validRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+    return res.status(429).json({ 
+      error: 'Too many requests. Please wait a moment before trying again.',
+      retryAfter: Math.ceil(RATE_LIMIT_WINDOW / 1000)
+    });
+  }
+  
+  validRequests.push(now);
+  userRequests.set(userIP, validRequests);
+  next();
+};
+
+router.post('/', checkRateLimit, [
   body('message').notEmpty().withMessage('Message is required'),
   body('role').notEmpty().withMessage('Role or skill is required'),
 ], async (req, res) => {
@@ -23,6 +51,17 @@ router.post('/', [
 
   if (!message || !role) {
     return res.status(400).json({ error: 'Message and role are required.' });
+  }
+
+  // Content validation to prevent policy violations
+  const inappropriateWords = ['inappropriate', 'offensive', 'spam', 'hack', 'exploit'];
+  const messageLower = message.toLowerCase();
+  const hasInappropriateContent = inappropriateWords.some(word => messageLower.includes(word));
+  
+  if (hasInappropriateContent) {
+    return res.status(400).json({ 
+      error: 'Message contains inappropriate content. Please keep it professional and workplace-appropriate.' 
+    });
   }
 
   if (!GEMINI_API_KEY) {
@@ -88,6 +127,8 @@ INTERVIEW STYLE:
 - If they answer well, acknowledge it and ask a follow-up
 - If they struggle, provide gentle guidance and ask a simpler question
 - Make the conversation feel like a real interview, not a quiz
+- Keep all content professional, appropriate, and workplace-friendly
+- Avoid any content that could be considered inappropriate or offensive
 
 Current skill area: ${role}
 User message: "${message}"
@@ -130,18 +171,74 @@ Respond as a helpful, engaging interview coach. If this is the first message, st
       status: err.response?.status
     });
     
-    // More specific error messages
+    // More specific error messages with details
     if (err.response?.status === 400) {
-      res.status(500).json({ error: 'Invalid request to AI service. Please check your input.' });
+      res.status(500).json({ 
+        error: 'Invalid request to AI service. Please check your input.',
+        details: err.response?.data?.error?.message || 'Bad request'
+      });
     } else if (err.response?.status === 401) {
-      res.status(500).json({ error: 'AI service authentication failed. Please check API key.' });
+      res.status(500).json({ 
+        error: 'AI service authentication failed. Please check API key.',
+        details: 'Invalid or missing API key'
+      });
     } else if (err.response?.status === 429) {
-      res.status(500).json({ error: 'AI service rate limit exceeded. Please try again later.' });
+      res.status(500).json({ 
+        error: 'AI service rate limit exceeded. Please try again later.',
+        details: 'Daily quota or rate limit reached. Check your Gemini API usage.',
+        retryAfter: err.response?.headers?.['retry-after'] || '15 minutes'
+      });
     } else if (err.code === 'ECONNABORTED') {
-      res.status(500).json({ error: 'AI service request timed out. Please try again.' });
+      res.status(500).json({ 
+        error: 'AI service request timed out. Please try again.',
+        details: 'Request took too long to complete'
+      });
     } else {
-      res.status(500).json({ error: 'Failed to get response from AI service. Please try again.' });
+      res.status(500).json({ 
+        error: 'Failed to get response from AI service. Please try again.',
+        details: err.response?.data?.error?.message || err.message
+      });
     }
+  }
+});
+
+// Test endpoint to check API key
+router.get('/test', async (req, res) => {
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
+  }
+
+  try {
+    const response = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+      {
+        contents: [{ parts: [{ text: 'Hello, this is a test message.' }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 50
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-goog-api-key': GEMINI_API_KEY
+        },
+        timeout: 5000
+      }
+    );
+
+    const aiText = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    res.json({ 
+      status: 'success', 
+      message: 'API key is working',
+      response: aiText?.trim() || 'No response text'
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      status: 'error',
+      error: err.response?.data?.error?.message || err.message,
+      statusCode: err.response?.status
+    });
   }
 });
 
