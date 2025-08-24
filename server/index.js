@@ -11,6 +11,8 @@ const app = express();
 const corsOptions = {
   origin: [
     'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
     'https://mock-bot-orcin.vercel.app',
     'https://vercel.app',
     process.env.CLIENT_ORIGIN

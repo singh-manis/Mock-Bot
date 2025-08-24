@@ -64,6 +64,9 @@ const MockInterviewBot = () => {
   const [speakingIdx, setSpeakingIdx] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceOnlyMode, setVoiceOnlyMode] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -120,6 +123,13 @@ const MockInterviewBot = () => {
         const transcript = event.results[0][0].transcript;
         setInputValue(transcript);
         setIsListening(false);
+        
+        // Auto-send message in voice-only mode
+        if (voiceOnlyMode) {
+          setTimeout(() => {
+            handleSendMessage();
+          }, 500);
+        }
       };
       recognitionRef.current.onerror = (event) => {
         setIsListening(false);
@@ -128,8 +138,12 @@ const MockInterviewBot = () => {
       recognitionRef.current.onend = () => {
         setIsListening(false);
       };
+      setVoiceEnabled(true);
+    } else {
+      setVoiceEnabled(false);
+      toast.error('Speech recognition is not supported in this browser.');
     }
-  }, []);
+  }, [voiceOnlyMode]);
 
   // Add helper to check if a message is the latest bot message
   const isLatestBotMessage = (idx) => {
@@ -187,6 +201,12 @@ const MockInterviewBot = () => {
       }
       console.log('Sending chat request:', { message: userMessage, role: roleId || skillId, roleContext });
 
+      // Prepare conversation history (exclude the current message being sent)
+      const conversationHistory = messages.map(msg => ({
+        type: msg.type,
+        content: msg.content
+      }));
+
       const res = await fetch(API_ENDPOINTS.CHAT, {
         method: 'POST',
         headers: {
@@ -196,7 +216,8 @@ const MockInterviewBot = () => {
         body: JSON.stringify({ 
           message: userMessage, 
           role: roleId || skillId,
-          roleContext: roleContext
+          roleContext: roleContext,
+          conversationHistory: conversationHistory
         })
       });
       
@@ -218,6 +239,15 @@ const MockInterviewBot = () => {
         content: data.reply,
         timestamp: new Date().toISOString()
       }]);
+      
+      // Auto-speak AI response if enabled
+      if (autoSpeak && data.reply) {
+        setTimeout(() => {
+          const newMessageIndex = messages.length;
+          setSpeakingIdx(newMessageIndex);
+          speakText(data.reply);
+        }, 300);
+      }
     } catch (err) {
       console.error('Chat error:', err);
       setMessages(prev => [...prev, {
@@ -229,6 +259,103 @@ const MockInterviewBot = () => {
       toast.error(`Error: Could not get AI response. Please try again.`);
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  const handleListen = (text, idx) => {
+    if ('speechSynthesis' in window) {
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      setSpeakingIdx(idx);
+      setIsPaused(false);
+      utterance.onend = () => {
+        setSpeakingIdx(null);
+        setIsPaused(false);
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    } else {
+      toast.error('Text-to-speech is not supported in this browser.');
+    }
+  };
+
+  const handlePause = () => {
+    if ('speechSynthesis' in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+      setIsPaused(true);
+    }
+  };
+
+  const handleResume = () => {
+    if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+    }
+  };
+
+  const handleStop = () => {
+    if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.paused)) {
+      window.speechSynthesis.cancel();
+      setSpeakingIdx(null);
+      setIsPaused(false);
+    }
+  };
+
+  // Enhanced voice functions
+  const speakText = (text) => {
+    if ('speechSynthesis' in window) {
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9; // Slightly slower for better comprehension
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      // Try to use a more natural voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(voice => 
+        voice.name.includes('Google') || 
+        voice.name.includes('Natural') || 
+        voice.name.includes('Premium')
+      );
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.onend = () => {
+        setSpeakingIdx(null);
+        setIsPaused(false);
+      };
+      
+      utterance.onerror = () => {
+        setSpeakingIdx(null);
+        setIsPaused(false);
+      };
+      
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const toggleVoiceMode = () => {
+    setVoiceOnlyMode(!voiceOnlyMode);
+    if (!voiceOnlyMode) {
+      toast.success('Voice-only mode enabled! Speak your answers.');
+    } else {
+      toast.info('Voice-only mode disabled. You can type or speak.');
+    }
+  };
+
+  const handleVoiceInput = () => {
+    if (!voiceEnabled) {
+      toast.error('Voice input is not supported in this browser.');
+      return;
+    }
+    
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      setIsListening(true);
+      recognitionRef.current?.start();
+      toast.info('Listening... Speak now!');
     }
   };
 
@@ -261,16 +388,6 @@ const MockInterviewBot = () => {
     }
   };
 
-  // Voice input logic
-  const handleMicClick = () => {
-    if (recognitionRef.current) {
-      setIsListening(true);
-      recognitionRef.current.start();
-    } else {
-      toast.error('Speech recognition is not supported in this browser.');
-    }
-  };
-
   // Export chat as PDF
   const handleExport = () => {
     const doc = new jsPDF();
@@ -292,40 +409,86 @@ const MockInterviewBot = () => {
     doc.save('mockbot-session.pdf');
   };
 
-  // Save session to localStorage with unique ID
-  const handleSaveSession = () => {
-    const sessionId = Date.now().toString();
-    const session = {
-      id: sessionId,
-      messages,
-      skill: selectedSkill,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Get existing sessions
-    const existingSessions = localStorage.getItem('mockbot-sessions');
-    let sessions = [];
-    
-    if (existingSessions) {
-      try {
-        sessions = JSON.parse(existingSessions);
-        if (!Array.isArray(sessions)) {
-          sessions = [sessions];
-        }
-      } catch (error) {
-        console.error('Error parsing existing sessions:', error);
-        sessions = [];
+  // Save session to server with user authentication
+  const handleSaveSession = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Please log in to save sessions');
+        return;
       }
+
+      // Convert client messages format to server format
+      const serverMessages = messages.map(msg => ({
+        sender: msg.type === 'user' ? 'user' : 'bot',
+        text: msg.content,
+        timestamp: new Date(msg.timestamp)
+      }));
+
+      const sessionData = {
+        role: selectedSkill || new URLSearchParams(location.search).get('role') || 'general',
+        messages: serverMessages
+      };
+
+      const response = await fetch(API_ENDPOINTS.SESSIONS, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(sessionData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // If token is invalid, clear it and redirect to login
+        if (response.status === 401 && errorData.error === 'Invalid token') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          toast.error('Session expired. Please log in again.');
+          window.location.href = '/login';
+          return;
+        }
+        
+        throw new Error(errorData.error || 'Failed to save session');
+      }
+
+      const savedSession = await response.json();
+      toast.success('Session saved successfully!');
+      
+      // Also save to localStorage for backward compatibility (but with server ID)
+      const clientSession = {
+        id: savedSession._id,
+        skill: savedSession.role,
+        messages: messages,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Get existing sessions from localStorage
+      const existingSessions = localStorage.getItem('mockbot-sessions');
+      let sessions = [];
+      
+      if (existingSessions) {
+        try {
+          sessions = JSON.parse(existingSessions);
+          if (!Array.isArray(sessions)) {
+            sessions = [sessions];
+          }
+        } catch (error) {
+          console.error('Error parsing existing sessions:', error);
+          sessions = [];
+        }
+      }
+      
+      // Add new session
+      sessions.push(clientSession);
+      localStorage.setItem('mockbot-sessions', JSON.stringify(sessions));
+      
+    } catch (error) {
+      console.error('Error saving session:', error);
+      toast.error('Failed to save session. Please try again.');
     }
-    
-    // Add new session
-    sessions.push(session);
-    localStorage.setItem('mockbot-sessions', JSON.stringify(sessions));
-    
-    // Also save as current session for backward compatibility
-    localStorage.setItem('mockbot-session', JSON.stringify(session));
-    
-    toast.success('Session saved successfully!');
   };
 
   // Resume session from localStorage
@@ -370,92 +533,74 @@ const MockInterviewBot = () => {
     }
   };
 
-  const handleListen = (text, idx) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new window.SpeechSynthesisUtterance(text);
-      setSpeakingIdx(idx);
-      setIsPaused(false);
-      utterance.onend = () => {
-        setSpeakingIdx(null);
-        setIsPaused(false);
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    } else {
-      toast.error('Text-to-speech is not supported in this browser.');
-    }
-  };
-
-  const handlePause = () => {
-    if ('speechSynthesis' in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
-      setIsPaused(true);
-    }
-  };
-
-  const handleResume = () => {
-    if ('speechSynthesis' in window && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      setIsPaused(false);
-    }
-  };
-
-  const handleStop = () => {
-    if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.paused)) {
-      window.speechSynthesis.cancel();
-      setSpeakingIdx(null);
-      setIsPaused(false);
-    }
-  };
-
   return (
-    <div className="flex flex-col items-center min-h-[60vh] animate-fade-in">
-      <div className="glass bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl p-6 md:p-10 max-w-2xl w-full border border-white/10 ">
+    <div className="flex flex-col items-center min-h-[60vh] animate-fade-in w-full">
+      <div className="glass card-elevated bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl w-full max-w-4xl mx-4 border border-white/10">
         {currentPhase === 'resume' && (
-          <div className="flex flex-col items-center gap-4 mb-6">
-            <button
-              onClick={handleResumeSession}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all shadow-lg"
-            >
-              <RotateCcw className="w-5 h-5" /> Resume Previous Session
-            </button>
-            <button
-              onClick={handleStartNewSession}
-              className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-cyan-500/20 text-white rounded-xl font-semibold transition-all"
-            >
-              Start New Session
-            </button>
-                </div>
-              )}
+          <div className="p-8 flex flex-col items-center gap-6">
+            <h2 className="text-2xl font-bold text-white text-center">Resume Your Session</h2>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button
+                onClick={handleResumeSession}
+                className="btn-primary btn-interactive flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all shadow-lg"
+              >
+                <RotateCcw className="w-5 h-5" /> Resume Previous Session
+              </button>
+              <button
+                onClick={handleStartNewSession}
+                className="btn-secondary btn-interactive flex items-center gap-2 px-8 py-4 bg-white/10 hover:bg-cyan-500/20 text-white rounded-xl font-semibold transition-all"
+              >
+                Start New Session
+              </button>
+            </div>
+          </div>
+        )}
+        
         {currentPhase === 'select' && !new URLSearchParams(location.search).get('role') && (
-          <>
-            <h2 className="text-2xl font-bold text-white mb-6 text-center">Select a Skill to Practice</h2>
+          <div className="p-8">
+            <h2 className="text-3xl font-bold text-white mb-8 text-center bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+              Select a Skill to Practice
+            </h2>
+            
             {/* Tips section */}
-            <div className="mb-6 p-4 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-2xl border border-cyan-500/20">
-              <h3 className="text-sm font-semibold text-cyan-300 mb-2 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
+            <div className="mb-8 p-6 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-2xl border border-cyan-500/20">
+              <h3 className="text-lg font-semibold text-cyan-300 mb-3 flex items-center gap-3">
+                <Sparkles className="w-5 h-5" />
                 Pro Tips for Better Practice
               </h3>
-              <ul className="text-xs text-gray-300 space-y-1">
-                <li>• Be specific and detailed in your answers</li>
-                <li>• Use real examples from your experience</li>
-                <li>• Ask for clarification if needed</li>
-                <li>• Practice active listening and responding thoughtfully</li>
+              <ul className="text-sm text-gray-300 space-y-2">
+                <li className="flex items-start gap-3">
+                  <span className="text-cyan-400 text-lg">•</span>
+                  <span>Be specific and detailed in your answers</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-cyan-400 text-lg">•</span>
+                  <span>Use real examples from your experience</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-cyan-400 text-lg">•</span>
+                  <span>Ask for clarification if needed</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-cyan-400 text-lg">•</span>
+                  <span>Practice active listening and responding thoughtfully</span>
+                </li>
               </ul>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-2">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {skills.map((skill, index) => (
                 <button
                   key={skill.id}
-                  className={`group flex flex-col items-center p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:bg-white/10 hover:border-cyan-400 transition-all duration-300 hover:scale-105 focus:outline-none interactive`}
+                  className={`group flex flex-col items-center p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:bg-white/10 hover:border-cyan-400 transition-all duration-300 hover:scale-105 focus:outline-none interactive card-elevated`}
                   onClick={() => handleSkillSelect(skill)}
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >
-                  <div className={`w-12 h-12 bg-gradient-to-r ${skill.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+                  <div className={`w-14 h-14 bg-gradient-to-r ${skill.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
                     <skill.icon className="w-7 h-7 text-white group-hover:rotate-12 transition-transform duration-300" />
                   </div>
-                  <span className="text-lg font-bold text-white mb-1 group-hover:text-cyan-300 transition-colors">{skill.name}</span>
-                  <span className="text-gray-400 text-sm mb-2 text-center">{skill.desc}</span>
+                  <span className="text-lg font-bold text-white mb-2 group-hover:text-cyan-300 transition-colors">{skill.name}</span>
+                  <span className="text-gray-300 text-sm mb-2 text-center">{skill.desc}</span>
                   <span className="text-cyan-400/70 text-xs mb-3 text-center px-2">{skill.examples}</span>
                   <span className="flex items-center text-cyan-400 group-hover:text-cyan-300 transition-colors text-sm font-medium">
                     Start Practice 
@@ -464,27 +609,27 @@ const MockInterviewBot = () => {
                 </button>
               ))}
             </div>
-          </>
+          </div>
         )}
+        
         {currentPhase === 'chat' && (
-          <>
+          <div className="p-6">
             {/* Role Indicator */}
             {(() => {
               try {
                 const selectedRole = localStorage.getItem('selectedRole');
                 if (selectedRole) {
                   const role = JSON.parse(selectedRole);
-                  // Import the icon dynamically - we'll use a fallback for now
-                  const RoleIcon = role.icon || Target; // Use Target as fallback
+                  const RoleIcon = role.icon || Target;
                   return (
-                    <div className="mb-4 p-3 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl border border-cyan-500/20 flex items-center justify-between">
+                    <div className="mb-6 p-4 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl border border-cyan-500/20 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 bg-gradient-to-r ${role.color} rounded-lg flex items-center justify-center`}>
-                          <Target className="w-4 h-4 text-white" />
+                        <div className={`w-10 h-10 bg-gradient-to-r ${role.color} rounded-lg flex items-center justify-center`}>
+                          <Target className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-cyan-300">Practicing for: {role.name}</div>
-                          <div className="text-xs text-gray-400">{role.description}</div>
+                          <div className="text-base font-semibold text-cyan-300">Practicing for: {role.name}</div>
+                          <div className="text-sm text-gray-300">{role.description}</div>
                         </div>
                       </div>
                       <button
@@ -492,7 +637,7 @@ const MockInterviewBot = () => {
                           localStorage.removeItem('selectedRole');
                           setCurrentPhase('select');
                         }}
-                        className="px-2 py-1 bg-white/10 hover:bg-white/20 text-xs text-gray-400 rounded-lg transition-all"
+                        className="px-3 py-1 bg-white/10 hover:bg-white/20 text-sm text-gray-300 rounded-lg transition-all focus-ring"
                         title="Change role selection"
                       >
                         Change Role
@@ -520,29 +665,103 @@ const MockInterviewBot = () => {
               showTips={showTips}
               setShowTips={setShowTips}
             />
+            
+            {/* Status indicators - only show when needed */}
             {isTyping && (
-              <div className="flex justify-start animate-fade-in">
-                <div className="rounded-2xl px-4 py-3 max-w-xs md:max-w-md bg-white/10 text-white border border-white/10 flex items-center gap-3">
+              <div className="flex justify-start animate-fade-in-up mb-4">
+                <div className="glass voice-indicator-enhanced rounded-2xl px-6 py-4 max-w-md flex items-center gap-4">
                   <div className="typing-indicator">
                     <div className="typing-dot"></div>
                     <div className="typing-dot"></div>
                     <div className="typing-dot"></div>
                   </div>
-                  <span className="text-sm text-gray-300">MockBot is thinking...</span>
-            </div>
+                  <span className="text-sm text-gray-300 font-medium">MockBot is thinking...</span>
+                </div>
               </div>
             )}
+            
+            {speakingIdx !== null && (
+              <div className="flex justify-start animate-fade-in-up mb-4">
+                <div className="glass voice-indicator-enhanced rounded-2xl px-6 py-4 max-w-md flex items-center gap-4 speaking-glow">
+                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-blue-300 font-medium">MockBot is speaking...</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Simplified Voice Controls - only essential toggles */}
+            {voiceEnabled && (
+              <div className="voice-controls-clean">
+                <div className="controls-body">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-base font-medium text-gray-300 flex items-center gap-2">
+                      <span role="img" aria-label="Voice" className="text-lg">🎤</span>
+                      Voice Settings
+                    </h3>
+                    <button
+                      onClick={toggleVoiceMode}
+                      className={`btn-clean ${
+                        voiceOnlyMode 
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg' 
+                          : 'btn-secondary'
+                      }`}
+                    >
+                      {voiceOnlyMode ? 'Voice Only' : 'Mixed Mode'}
+                    </button>
+                    <button
+                      onClick={() => setAutoSpeak(!autoSpeak)}
+                      className={`btn-clean ${
+                        autoSpeak 
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg' 
+                          : 'btn-secondary'
+                      }`}
+                    >
+                      {autoSpeak ? 'Auto-Speak On' : 'Auto-Speak Off'}
+                    </button>
+                  </div>
+                  
+                  {/* Single voice input button */}
+                  <button
+                    onClick={handleVoiceInput}
+                    className={`p-3 rounded-xl transition-all focus-ring ${
+                      isListening 
+                        ? 'bg-red-500 animate-pulse listening-wave' 
+                        : voiceOnlyMode 
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 shadow-lg' 
+                          : 'btn-secondary'
+                    }`}
+                    title={isListening ? 'Stop Listening' : 'Start Voice Input'}
+                  >
+                    {isListening ? (
+                      <span role="img" aria-label="Listening" className="text-lg">🔴</span>
+                    ) : (
+                      <span role="img" aria-label="Mic" className="text-lg">🎙️</span>
+                    )}
+                  </button>
+                </div>
+                
+                {/* Status info - only show when relevant */}
+                {(voiceOnlyMode || autoSpeak) && (
+                  <div className="flex items-center gap-4 mt-3 text-sm text-gray-400">
+                    {voiceOnlyMode && <span>Voice-only mode active</span>}
+                    {autoSpeak && <span>Auto-speak enabled</span>}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <ChatInput
               inputValue={inputValue}
               setInputValue={setInputValue}
               handleSendMessage={handleSendMessage}
-              handleMicClick={handleMicClick}
+              handleMicClick={handleVoiceInput}
               handleExport={handleExport}
               handleSaveSession={handleSaveSession}
               isListening={isListening}
+              voiceOnlyMode={voiceOnlyMode}
             />
             <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -551,8 +770,7 @@ const MockInterviewBot = () => {
 
 const Chat = () => (
   <Layout>
-    <div className="max-w-4xl mx-auto w-full mt-8 p-8">
-      {/* <h1 className="text-2xl font-bold text-white mb-6">Chat</h1> */}
+    <div className="w-full mt-8 p-4 md:p-8">
       <MockInterviewBot />
     </div>
   </Layout>

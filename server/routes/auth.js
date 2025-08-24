@@ -20,18 +20,31 @@ router.post('/register', [
   }
   try {
     const { name, email, password } = req.body;
+    console.log('Registration attempt for:', { name, email });
+    
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'All fields are required.' });
     }
+    
     const existingUser = await User.findOne({ email });
+    console.log('Existing user check:', existingUser ? 'User exists' : 'No existing user');
+    
     if (existingUser) {
+      console.log('Email already in use:', email);
       return res.status(400).json({ message: 'Email already in use.' });
     }
+    
+    console.log('Creating new user...');
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log('Password hashed successfully');
+    
     const user = new User({ name, email, password: hashedPassword });
     await user.save();
+    console.log('User created successfully:', { id: user._id, name: user.name, email: user.email });
+    
     res.status(201).json({ message: 'User registered successfully.' });
   } catch (err) {
+    console.error('Registration error:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -47,20 +60,34 @@ router.post('/login', [
   }
   try {
     const { email, password } = req.body;
+    console.log('Login attempt for email:', email);
+    
     if (!email || !password) {
       return res.status(400).json({ message: 'All fields are required.' });
     }
+    
     const user = await User.findOne({ email });
+    console.log('User found:', user ? 'Yes' : 'No');
+    
     if (!user) {
+      console.log('No user found with email:', email);
       return res.status(400).json({ message: 'Invalid credentials.' });
     }
+    
+    console.log('Comparing passwords...');
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log('Password match:', isMatch);
+    
     if (!isMatch) {
+      console.log('Password does not match for user:', email);
       return res.status(400).json({ message: 'Invalid credentials.' });
     }
+    
+    console.log('Login successful for user:', email);
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
     res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -147,6 +174,21 @@ router.post('/upload-profile-image', auth, upload.single('profileImage'), (req, 
     return res.status(400).json({ message: 'No file uploaded' });
   }
   res.json({ imageUrl: req.file.path });
+});
+
+// Test endpoint to check users (remove in production)
+router.get('/test-users', async (req, res) => {
+  try {
+    const users = await User.find({}, { password: 0 }); // Exclude passwords
+    res.json({ 
+      message: 'Users in database',
+      count: users.length,
+      users: users.map(u => ({ id: u._id, name: u.name, email: u.email, createdAt: u.createdAt }))
+    });
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
 });
 
 module.exports = router; 

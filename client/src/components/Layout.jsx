@@ -30,7 +30,7 @@ const FloatingElements = () => {
     return () => clearInterval(timer);
   }, []);
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+    <div className="floating-elements fixed inset-0 w-full h-full overflow-hidden z-0 pointer-events-none">
       {floatingElements.map((element) => (
         <div
           key={element.id}
@@ -54,7 +54,7 @@ const Layout = ({ children }) => (
     {/* <OnboardingTour /> Removed to prevent showing on all pages */}
     <FloatingElements />
     <Header />
-    <main className="relative z-10 pt-24 pb-8 px-4 md:px-8">
+    <main className="relative z-10 pt-20 pb-8 px-4 md:px-8">
       {children}
     </main>
   </div>

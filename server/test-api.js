@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = 'http://localhost:5000/api';
+const BASE_URL = 'http://localhost:3002/api';
 
 async function testAPI() {
   console.log('🧪 Testing MockBot API...\n');

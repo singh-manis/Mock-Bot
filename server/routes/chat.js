@@ -10,10 +10,10 @@ if (!GEMINI_API_KEY) {
   console.error('GEMINI_API_KEY is not set in environment variables');
 }
 
-// Simple rate limiting to prevent abuse
+// Enhanced rate limiting to prevent abuse and API quota issues
 const userRequests = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 10;
+const MAX_REQUESTS_PER_WINDOW = 5; // Reduced from 10 to 5 to be more conservative
 
 const checkRateLimit = (req, res, next) => {
   const userIP = req.ip || req.connection.remoteAddress;
@@ -47,7 +47,7 @@ router.post('/', checkRateLimit, [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { message, role, roleContext } = req.body;
+  const { message, role, roleContext, conversationHistory = [] } = req.body;
 
   if (!message || !role) {
     return res.status(400).json({ error: 'Message and role are required.' });
@@ -98,7 +98,17 @@ router.post('/', checkRateLimit, [
 
     const roleStyle = getRoleStyle(role);
 
-    // Enhanced prompt for better interview responses with role context
+    // Build conversation context from history
+    let conversationContext = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationContext = '\n\nCONVERSATION HISTORY:\n';
+      conversationHistory.forEach((msg, index) => {
+        const speaker = msg.type === 'user' ? 'Candidate' : 'Interviewer';
+        conversationContext += `${speaker}: ${msg.content}\n`;
+      });
+    }
+
+    // Enhanced prompt for better interview responses with conversation context
     let systemPrompt = `You are an expert mock interview coach conducting a ${roleStyle.approach} interview. Your focus is on ${roleStyle.focus}. Maintain a ${roleStyle.tone} tone.`;
 
     // Add role-specific context if provided
@@ -110,30 +120,34 @@ router.post('/', checkRateLimit, [
 
 IMPORTANT GUIDELINES:
 1. Be conversational and natural, not robotic or textbook-like
-2. Ask ONE question at a time and wait for the candidate's response
+2. ALWAYS acknowledge and respond to the candidate's answer before asking the next question
 3. Provide specific, constructive feedback on their answers
 4. Ask follow-up questions based on their responses
 5. Keep responses concise (2-4 sentences max)
 6. Be encouraging but professional
 7. Adapt your questions based on the conversation flow
-8. Do NOT repeat questions already asked in this session. Always generate a new, relevant question based on the conversation so far.
-9. Each question should be clearly structured, focused on one topic, and easy to understand. Use bullet points or numbered lists if helpful. Avoid vague or overly broad questions.`;
+8. Do NOT repeat questions already asked in this session
+9. Each question should be clearly structured, focused on one topic, and easy to understand
+10. If the candidate says "I don't know" or seems unsure, provide guidance and ask a simpler question
+11. If the candidate gives a good answer, acknowledge it positively before moving to the next topic`;
 
     systemPrompt += `
 
 INTERVIEW STYLE:
 - Start with a warm, professional greeting
 - Ask specific, practical questions relevant to ${role}
+- ALWAYS provide feedback on their answer before asking the next question
 - If they answer well, acknowledge it and ask a follow-up
 - If they struggle, provide gentle guidance and ask a simpler question
 - Make the conversation feel like a real interview, not a quiz
 - Keep all content professional, appropriate, and workplace-friendly
 - Avoid any content that could be considered inappropriate or offensive
 
-Current skill area: ${role}
-User message: "${message}"
+Current skill area: ${role}${conversationContext}
 
-Respond as a helpful, engaging interview coach. If this is the first message, start the interview naturally. If they've answered a question, provide feedback and ask the next relevant question.`;
+Current user message: "${message}"
+
+IMPORTANT: You must respond to the candidate's answer first, then ask your next question. Do not skip responding to their answer.`;
 
     const response = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
@@ -141,7 +155,7 @@ Respond as a helpful, engaging interview coach. If this is the first message, st
         contents: [{ parts: [{ text: systemPrompt }] }],
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 150,
+          maxOutputTokens: 200,
           topP: 0.9,
           topK: 50
         }
@@ -183,10 +197,11 @@ Respond as a helpful, engaging interview coach. If this is the first message, st
         details: 'Invalid or missing API key'
       });
     } else if (err.response?.status === 429) {
-      res.status(500).json({ 
+      res.status(429).json({ 
         error: 'AI service rate limit exceeded. Please try again later.',
         details: 'Daily quota or rate limit reached. Check your Gemini API usage.',
-        retryAfter: err.response?.headers?.['retry-after'] || '15 minutes'
+        retryAfter: err.response?.headers?.['retry-after'] || '5 minutes',
+        suggestion: 'Wait a few minutes before trying again, or check your API quota in Google AI Studio'
       });
     } else if (err.code === 'ECONNABORTED') {
       res.status(500).json({ 

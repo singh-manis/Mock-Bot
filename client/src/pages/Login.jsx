@@ -31,6 +31,12 @@ export default function Login() {
         email: data.user?.email || email
       }));
       
+      // Clear any existing session data to ensure clean slate for new user
+      localStorage.removeItem('mockbot-sessions');
+      localStorage.removeItem('mockbot-session');
+      localStorage.removeItem('mockbot-resume-session');
+      localStorage.removeItem('selectedRole');
+      
       // Redirect to dashboard
       navigate('/dashboard');
     } catch (err) {

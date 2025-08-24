@@ -1,33 +1,79 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { RotateCcw, Trash2, Plus, MessageCircle, Calendar, Clock, TrendingUp } from 'lucide-react';
+import { API_ENDPOINTS } from '../config';
+import { toast } from 'react-toastify';
 
 const Sessions = () => {
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadSessions();
   }, []);
 
-  const loadSessions = () => {
-    const saved = localStorage.getItem('mockbot-sessions');
-    if (saved) {
-      try {
-        const parsedSessions = JSON.parse(saved);
-        setSessions(Array.isArray(parsedSessions) ? parsedSessions : [parsedSessions]);
-      } catch (error) {
-        console.error('Error loading sessions:', error);
-        setSessions([]);
+  const loadSessions = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('Please log in to view your sessions');
+        return;
       }
+
+      const response = await fetch(API_ENDPOINTS.SESSIONS, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // If token is invalid, clear it and redirect to login
+        if (response.status === 401 && errorData.error === 'Invalid token') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          toast.error('Session expired. Please log in again.');
+          window.location.href = '/login';
+          return;
+        }
+        
+        throw new Error(errorData.error || 'Failed to fetch sessions');
+      }
+
+      const data = await response.json();
+      setSessions(data.sessions || []);
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      toast.error('Failed to load sessions');
+      setSessions([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleResume = (session) => {
-    // Store the selected session for the Chat page to pick up
-    localStorage.setItem('mockbot-resume-session', JSON.stringify(session));
+    // Convert server session format to client format
+    const clientSession = {
+      id: session._id,
+      skill: session.role,
+      messages: session.messages.map(msg => ({
+        id: msg._id || Date.now(),
+        type: msg.sender === 'user' ? 'user' : 'bot',
+        content: msg.text,
+        timestamp: new Date(msg.timestamp).toISOString()
+      })),
+      timestamp: new Date(session.createdAt).toISOString()
+    };
+    
+    localStorage.setItem('mockbot-resume-session', JSON.stringify(clientSession));
     window.location.href = '/chat';
   };
 
@@ -36,11 +82,30 @@ const Sessions = () => {
     setShowConfirm(true);
   };
 
-  const confirmDelete = () => {
-    if (sessionToDelete) {
-      const updatedSessions = sessions.filter(s => s.id !== sessionToDelete.id);
-      localStorage.setItem('mockbot-sessions', JSON.stringify(updatedSessions));
-      setSessions(updatedSessions);
+  const confirmDelete = async () => {
+    if (!sessionToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_ENDPOINTS.SESSIONS}/${sessionToDelete._id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete session');
+      }
+
+      // Remove from local state
+      setSessions(prev => prev.filter(s => s._id !== sessionToDelete._id));
+      toast.success('Session deleted successfully');
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      toast.error('Failed to delete session');
+    } finally {
       setShowConfirm(false);
       setSessionToDelete(null);
     }
@@ -57,8 +122,8 @@ const Sessions = () => {
   };
 
   const getSessionStats = (session) => {
-    const userMessages = session.messages?.filter(m => m.type === 'user') || [];
-    const botMessages = session.messages?.filter(m => m.type === 'bot') || [];
+    const userMessages = session.messages?.filter(m => m.sender === 'user') || [];
+    const botMessages = session.messages?.filter(m => m.sender === 'bot') || [];
     return {
       totalMessages: session.messages?.length || 0,
       userMessages: userMessages.length,
@@ -66,6 +131,24 @@ const Sessions = () => {
       duration: session.messages?.length > 1 ? 'Active' : 'Started'
     };
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in p-4">
+          <div className="glass bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl p-8 max-w-4xl w-full border border-white/10">
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <MessageCircle className="w-10 h-10 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Loading Sessions...</h3>
+              <p className="text-gray-400">Please wait while we fetch your interview sessions.</p>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -87,7 +170,7 @@ const Sessions = () => {
                 const stats = getSessionStats(session);
                 return (
                   <div 
-                    key={session.id || index}
+                    key={session._id || index}
                     className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-6 hover:bg-white/10 transition-all duration-300 interactive"
                   >
                     <div className="flex items-center justify-between mb-4">
@@ -100,17 +183,17 @@ const Sessions = () => {
                     </div>
 
                     <h3 className="text-lg font-bold text-white mb-2">
-                      {getSkillName(session.skill)}
+                      {getSkillName(session.role)}
                     </h3>
 
                     <div className="space-y-2 mb-4">
                       <div className="flex items-center gap-2 text-sm text-gray-400">
                         <Calendar className="w-4 h-4" />
-                        <span>{session.timestamp ? new Date(session.timestamp).toLocaleDateString() : 'Unknown'}</span>
+                        <span>{session.createdAt ? new Date(session.createdAt).toLocaleDateString() : 'Unknown'}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-400">
                         <Clock className="w-4 h-4" />
-                        <span>{session.timestamp ? new Date(session.timestamp).toLocaleTimeString() : 'Unknown'}</span>
+                        <span>{session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : 'Unknown'}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-400">
                         <TrendingUp className="w-4 h-4" />

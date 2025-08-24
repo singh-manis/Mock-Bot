@@ -15,7 +15,14 @@ export default function Header() {
   const location = useLocation();
 
   const handleLogout = () => {
+    // Clear all session-related data from localStorage
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("mockbot-sessions");
+    localStorage.removeItem("mockbot-session");
+    localStorage.removeItem("mockbot-resume-session");
+    localStorage.removeItem("selectedRole");
+    
     navigate("/login");
   };
 
